@@ -16,7 +16,6 @@ def main():
     report = json.loads(SOURCE.read_text(encoding="utf-8"))
     games = report.get("games", [])
 
-    # Conserver une seule entrée par jeu.
     unique = {}
     for game in games:
         uid = game.get("universeId")
@@ -25,7 +24,6 @@ def main():
 
     games = list(unique.values())
 
-    # Score indicatif : joueurs + appréciation des joueurs.
     for game in games:
         players = game.get("playerCount") or 0
         up = game.get("totalUpVotes") or 0
@@ -52,10 +50,7 @@ def main():
     result = {
         "analyzed_at": datetime.now(timezone.utc).isoformat(),
         "games_analyzed": len(games),
-        "ranking_method": (
-            "Joueurs actuels pondérés par le taux de votes positifs. "
-            "Ce score n'est pas une mesure de croissance."
-        ),
+        "ranking_method": "Popularite actuelle et votes, pas croissance",
         "popular_categories": sorted(
             [
                 {"genre": genre, "games": count}
@@ -73,51 +68,37 @@ def main():
         encoding="utf-8"
     )
 
-    # Générer une première proposition de jeu original.
-    top_genres = result["popular_categories"][:3]
-    genre_text = ", ".join(
-        item["genre"] for item in top_genres
-    ) or "Obby & Platformer"
+    genres = ", ".join(
+        item["genre"] for item in result["popular_categories"][:3]
+    )
 
-    idea = f"""# Proposition de jeu Roblox
+    idea = f"""# Idee de jeu Roblox
 
-Générée le : {result['analyzed_at']}
+Generee le : {result['analyzed_at']}
 
-## Concept
-Créer un jeu original qui combine des mécaniques simples
-de parcours, de progression et de rejouabilité.
+Genres observes : {genres}
 
-## Genres observés
-{genre_text}
+## Prototype propose : Obby Evolution
 
-## Boucle de jeu proposée
-1. Le joueur démarre dans une zone sûre.
-2. Il relève un défi court et facile à comprendre.
-3. Il gagne des pièces ou débloque une amélioration.
-4. Il accède à un défi plus difficile.
-5. Il peut rejouer pour améliorer son temps ou son score.
+- Une zone de depart
+- Cinq obstacles progressifs
+- Des points de controle
+- Des pieces a collecter
+- Des ameliorations debloquables
+- Une ligne d'arrivee
+- Une interface adaptee au mobile
 
-## Première version jouable
-- Une zone de départ.
-- Cinq obstacles.
-- Des points de contrôle.
-- Un compteur de pièces.
-- Une ligne d'arrivée.
-- Une interface adaptée aux téléphones.
-
-## Important
-Cette proposition est un concept initial, pas encore un jeu
-Roblox publié. Les catégories observées ne garantissent
-ni la popularité future ni des revenus.
+Cette proposition est un concept, pas encore un jeu publie.
+La popularite et les revenus ne sont pas garantis.
 """
 
     (DATA / "game_idea.md").write_text(
         idea, encoding="utf-8"
     )
 
-    print(f"✅ {len(games)} jeux analysés")
-    print("🏆 Classement : data/analysis.json")
-    print("💡 Idée de jeu : data/game_idea.md")
+    print(f"Jeux analyses : {len(games)}")
+    print("Classement : data/analysis.json")
+    print("Idee : data/game_idea.md")
 
 
 if __name__ == "__main__":
