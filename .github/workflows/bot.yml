@@ -4,7 +4,7 @@ name: Roblox Trend Bot
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 */6 * * *"
+    - cron: "0 */6 * * *"
 
 permissions:
   contents: read
@@ -12,6 +12,7 @@ permissions:
 jobs:
   analyze:
     runs-on: ubuntu-latest
+
     steps:
       - name: Recuperer le code
         uses: actions/checkout@v4
@@ -21,13 +22,18 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Lancer le bot
+      - name: Recuperer les jeux Roblox
         run: python main.py
 
-      - name: Sauvegarder le rapport
-        if: always()
+      - name: Analyser les tendances
+        run: python analyze.py
+
+      - name: Publier les rapports
         uses: actions/upload-artifact@v4
         with:
           name: rapport-roblox
-          path: data/trends.json
-          if-no-files-found: ignore
+          path: |
+            data/trends.json
+            data/analysis.json
+            data/game_idea.md
+          if-no-files-found: error
