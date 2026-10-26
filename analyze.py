@@ -1,43 +1,48 @@
-
 import json
 import math
-import os
 from datetime import datetime, timezone
-from collections import Counter, defaultdict
+from pathlib import Path
 
-DATA_DIR = "data"
-TRENDS_FILE = f"{DATA_DIR}/trends.json"
-HISTORY_FILE = f"{DATA_DIR}/history.json"
-ANALYSIS_FILE = f"{DATA_DIR}/analysis.json"
-IDEA_FILE = f"{DATA_DIR}/game_idea.md"
+DATA_DIR = Path("data")
+TRENDS_FILE = DATA_DIR / "trends.json"
+HISTORY_FILE = DATA_DIR / "history.json"
+ANALYSIS_FILE = DATA_DIR / "analysis.json"
+IDEA_FILE = DATA_DIR / "game_idea.md"
 
-MAX_HISTORY = 30
-MIN_INTERVAL_HOURS = 0.5
-MIN_BASE_PLAYERS = 25
+MIN_COMPARISON_HOURS = 0.5
+MAX_HISTORY_SNAPSHOTS = 100
+MIN_PLAYERS_FOR_GROWTH = 25
 
-
-# ==================================================
-# OUTILS
-# ==================================================
 
 def read_json(path, default):
     try:
-        with open(path, "r", encoding="utf-8") as file:
+        with path.open("r", encoding="utf-8") as file:
             return json.load(file)
-    except (OSError, json.JSONDecodeError):
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
         return default
 
 
 def write_json(path, data):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    temp = path + ".tmp"
-    with open(temp, "w", encoding="utf-8") as file:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False, indent=2)
-        file.write("\n")
-    os.replace(temp, path)
+    temporary.replace(path)
 
 
-def num(value, default=0):
+def parse_timestamp(value):
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if result.tzinfo is None:
+            result = result.replace(tzinfo=timezone.utc)
+        return result.astimezone(timezone.utc)
+    except (ValueError, TypeError):
+        return None
+
+
+def number(value, default=0):
     try:
         result = float(value)
         return result if math.isfinite(result) else default
@@ -45,498 +50,334 @@ def num(value, default=0):
         return default
 
 
-def parse_date(value):
-    if not isinstance(value, str):
-        return None
-    try:
-        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.timestamp()
-    except (ValueError, OverflowError):
-        return None
+def game_id(game):
+    value = game.get("universeId", game.get("game_id"))
+    return str(value) if value is not None else None
 
 
-def game_key(game):
-    for field in ("universeId", "rootPlaceId", "placeId", "id"):
-        value = game.get(field)
-        if value is not None:
-            return str(value)
-    return str(game.get("name", "")).strip().casefold()
-
-
-def clean_games(items):
+def deduplicate(games):
     result = {}
-    if not isinstance(items, list):
-        return []
-
-    for item in items:
-        if not isinstance(item, dict):
+    for game in games:
+        if not isinstance(game, dict):
             continue
-        key = game_key(item)
-        if key:
-            result[key] = item
-
+        identifier = game_id(game)
+        if identifier:
+            result[identifier] = dict(game)
+            result[identifier]["game_id"] = identifier
     return list(result.values())
 
 
-def players(game):
-    return max(0, num(game.get("playerCount", game.get("playing", 0))))
-
-
-def approval(game):
-    up = num(game.get("totalUpVotes", game.get("upVotes", 0)))
-    down = num(game.get("totalDownVotes", game.get("downVotes", 0)))
+def approval_rate(game):
+    up = number(game.get("totalUpVotes"))
+    down = number(game.get("totalDownVotes"))
     total = up + down
-    return round(up * 100 / total, 1) if total else None
+    return round(100 * up / total, 1) if total > 0 else None
 
 
-def rank_score(value, values):
-    """Score relatif entre 0 et 100."""
-    if not values:
-        return 50.0
-    return round(
-        100 * sum(v <= value for v in values) / len(values), 1
+def main():
+    now = datetime.now(timezone.utc)
+    analyzed_at = now.isoformat()
+
+    raw_games = read_json(TRENDS_FILE, [])
+    if isinstance(raw_games, dict):
+        raw_games = raw_games.get("games", [])
+
+    games = deduplicate(raw_games)
+    if not games:
+        raise RuntimeError(
+            "Aucun jeu trouvé dans data/trends.json. "
+            "Vérifie que main.py a bien récupéré les jeux."
+        )
+
+    history = read_json(HISTORY_FILE, [])
+    if not isinstance(history, list):
+        history = []
+
+    # Récupérer le relevé historique le plus récent AVANT celui-ci.
+    previous_snapshot = None
+    previous_time = None
+
+    for snapshot in history:
+        if not isinstance(snapshot, dict):
+            continue
+        stamp = parse_timestamp(snapshot.get("timestamp"))
+        if stamp is None or stamp >= now:
+            continue
+        if previous_time is None or stamp > previous_time:
+            previous_snapshot = snapshot
+            previous_time = stamp
+
+    comparison_hours = None
+    previous_games = {}
+
+    if previous_snapshot:
+        previous_time = parse_timestamp(previous_snapshot.get("timestamp"))
+        if previous_time:
+            comparison_hours = (now - previous_time).total_seconds() / 3600
+
+        old_games = previous_snapshot.get("games", [])
+        for old_game in deduplicate(old_games):
+            previous_games[game_id(old_game)] = old_game
+
+    enough_time = (
+        comparison_hours is not None
+        and comparison_hours >= MIN_COMPARISON_HOURS
     )
 
+    # Conserver tous les relevés : ils servent aux prochaines analyses.
+    history.append({
+        "timestamp": analyzed_at,
+        "games": [
+            {
+                "universeId": game_id(game),
+                "name": game.get("name", "Jeu inconnu"),
+                "playerCount": int(number(game.get("playerCount"))),
+                "genreL1": game.get("genreL1", ""),
+            }
+            for game in games
+        ],
+    })
+    history = history[-MAX_HISTORY_SNAPSHOTS:]
+    write_json(HISTORY_FILE, history)
 
-def clamp(value, low=0, high=100):
-    return max(low, min(high, value))
+    # Calculer les variations et les scores.
+    player_counts = [number(g.get("playerCount")) for g in games]
+    max_players = max(player_counts, default=0)
 
+    enriched = []
+    comparable = 0
 
-# ==================================================
-# CHARGEMENT DES DONNÉES
-# ==================================================
+    for game in games:
+        identifier = game_id(game)
+        players = int(number(game.get("playerCount")))
+        old = previous_games.get(identifier)
 
-os.makedirs(DATA_DIR, exist_ok=True)
+        growth = None
+        growth_pct = None
+        growth_per_hour = None
 
-raw = read_json(TRENDS_FILE, [])
-if isinstance(raw, dict):
-    raw = raw.get("games", raw.get("data", []))
+        if old is not None:
+            old_players = int(number(old.get("playerCount")))
+            if old_players >= MIN_PLAYERS_FOR_GROWTH:
+                comparable += 1
+                growth = players - old_players
+                growth_pct = round(100 * growth / old_players, 2)
 
-current_games = clean_games(raw)
+                if enough_time:
+                    growth_per_hour = round(
+                        growth / comparison_hours, 2
+                    )
 
-if not current_games:
-    raise SystemExit(
-        "ERREUR : aucun jeu trouvé dans data/trends.json. "
-        "Vérifie d'abord l'exécution de main.py."
+        up = number(game.get("totalUpVotes"))
+        down = number(game.get("totalDownVotes"))
+        rate = approval_rate(game)
+
+        # Popularité basée sur les joueurs actuels, pas sur la croissance.
+        popularity = (
+            100 * math.log1p(max(0, players))
+            / math.log1p(max_players)
+            if max_players > 0 else 0
+        )
+
+        # Croissance seulement lorsque l'intervalle est assez long.
+        if enough_time and growth_pct is not None:
+            growth_score = max(0, min(100, 50 + growth_pct * 5))
+        else:
+            growth_score = 0
+
+        # Potentiel indicatif : popularité, avis et croissance positive.
+        rating_score = rate if rate is not None else 50
+        positive_growth_bonus = (
+            min(20, max(0, growth_pct))
+            if enough_time and growth_pct is not None else 0
+        )
+        potential = (
+            0.55 * popularity
+            + 0.35 * rating_score
+            + 0.10 * (positive_growth_bonus * 5)
+        )
+
+        trend_score = (
+            0.60 * popularity + 0.40 * growth_score
+            if enough_time and growth_pct is not None
+            else 0.75 * popularity + 0.25 * rating_score
+        )
+
+        item = dict(game)
+        item.update({
+            "game_id": identifier,
+            "genre": game.get("genreL1") or "Inconnu",
+            "approval_rate": rate,
+            "player_growth": growth,
+            "player_growth_pct": growth_pct,
+            "growth_per_hour": growth_per_hour,
+            "comparison_hours": (
+                round(comparison_hours, 2)
+                if comparison_hours is not None else None
+            ),
+            "popularity_score": round(popularity, 1),
+            "growth_score": round(growth_score, 1),
+            "potential_score": round(potential, 1),
+            "trend_score": round(trend_score, 1),
+            "trend_confirmed": bool(
+                enough_time and growth_pct is not None
+            ),
+        })
+        enriched.append(item)
+
+    # La croissance n'est classée que si l'intervalle dépasse 30 minutes.
+    valid_growth = [
+        g for g in enriched
+        if enough_time and g["player_growth"] is not None
+        and g["player_growth"] > 0
+    ]
+    valid_decline = [
+        g for g in enriched
+        if enough_time and g["player_growth"] is not None
+        and g["player_growth"] < 0
+    ]
+
+    fastest_growing = sorted(
+        valid_growth,
+        key=lambda g: (
+            g["growth_per_hour"] if g["growth_per_hour"] is not None else 0
+        ),
+        reverse=True,
+    )[:20]
+
+    rising_games = sorted(
+        [
+            g for g in valid_growth
+            if g["player_growth_pct"] is not None
+            and g["player_growth_pct"] >= 1
+        ],
+        key=lambda g: g["player_growth_pct"],
+        reverse=True,
+    )[:20]
+
+    declining_games = sorted(
+        [
+            g for g in valid_decline
+            if g["player_growth_pct"] is not None
+            and g["player_growth_pct"] <= -1
+        ],
+        key=lambda g: g["player_growth_pct"],
+    )[:20]
+
+    high_potential = sorted(
+        enriched,
+        key=lambda g: g["potential_score"],
+        reverse=True,
+    )[:20]
+
+    top_games = sorted(
+        enriched,
+        key=lambda g: g["popularity_score"],
+        reverse=True,
+    )[:20]
+
+    category_counts = {}
+    for game in enriched:
+        genre = game["genre"]
+        category_counts[genre] = category_counts.get(genre, 0) + 1
+
+    popular_categories = [
+        {"genre": genre, "games": count}
+        for genre, count in sorted(
+            category_counts.items(),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+    ]
+
+    note = (
+        "Les classements de croissance nécessitent un intervalle "
+        "d'au moins 30 minutes. Une variation sur un seul intervalle "
+        "ne prouve pas une tendance durable. Les joueurs en ligne "
+        "varient selon l'heure, les mises à jour et les événements."
     )
 
-history = read_json(HISTORY_FILE, [])
-if not isinstance(history, list):
-    history = []
+    if not enough_time:
+        note = (
+            f"Comparaison trop récente ({comparison_hours * 60:.1f} minutes) "
+            "ou historique insuffisant. Les classements de croissance "
+            "seront disponibles après au moins 30 minutes entre deux relevés."
+        ) if comparison_hours is not None else (
+            "Premier relevé : aucune comparaison historique disponible. "
+            "Attends au moins 30 minutes avant la prochaine analyse."
+        )
 
-now = datetime.now(timezone.utc)
-now_ts = now.timestamp()
-now_iso = now.isoformat()
-
-# Accepte les anciens snapshots utilisant timestamp ou analyzed_at.
-valid_history = []
-
-for snapshot in history:
-    if not isinstance(snapshot, dict):
-        continue
-
-    stamp = parse_date(
-        snapshot.get("timestamp", snapshot.get("analyzed_at"))
-    )
-    snapshot_games = snapshot.get("games", [])
-
-    if stamp is not None and isinstance(snapshot_games, list):
-        valid_history.append((stamp, snapshot))
-
-valid_history.sort(key=lambda item: item[0])
-
-# Trouve le snapshot précédent, sans utiliser un relevé futur.
-previous_snapshot = None
-previous_ts = None
-
-for stamp, snapshot in reversed(valid_history):
-    if stamp < now_ts:
-        previous_snapshot = snapshot
-        previous_ts = stamp
-        break
-
-previous_games = {}
-
-if previous_snapshot:
-    previous_games = {
-        game_key(g): g
-        for g in clean_games(previous_snapshot.get("games", []))
+    analysis = {
+        "analyzed_at": analyzed_at,
+        "games_analyzed": len(enriched),
+        "games_comparable": comparable,
+        "history_snapshots": len(history),
+        "comparison_hours": (
+            round(comparison_hours, 2)
+            if comparison_hours is not None else None
+        ),
+        "popular_categories": popular_categories,
+        "top_games": top_games,
+        "fastest_growing_games": fastest_growing,
+        "high_potential_games": high_potential,
+        "rising_games": rising_games,
+        "declining_games": declining_games,
+        "note": note,
     }
 
-elapsed_hours = (
-    (now_ts - previous_ts) / 3600
-    if previous_ts is not None else None
-)
+    write_json(ANALYSIS_FILE, analysis)
 
-# Historique de chaque jeu, construit à partir des relevés datés.
-observations = defaultdict(list)
-
-for stamp, snapshot in valid_history:
-    for game in clean_games(snapshot.get("games", [])):
-        observations[game_key(game)].append((stamp, game))
-
-
-# ==================================================
-# ANALYSE DES JEUX
-# ==================================================
-
-records = []
-
-for game in current_games:
-    key = game_key(game)
-    count = players(game)
-    old_game = previous_games.get(key)
-
-    growth = None
-    growth_pct = None
-    growth_hour = None
-
-    if old_game is not None and elapsed_hours and elapsed_hours > 0:
-        old_count = players(old_game)
-        growth = count - old_count
-        growth_hour = growth / elapsed_hours
-
-        if old_count >= MIN_BASE_PLAYERS:
-            growth_pct = 100 * growth / old_count
-
-    # Construit une série d'observations avec le relevé actuel.
-    series = observations.get(key, []) + [(now_ts, game)]
-    by_timestamp = {stamp: item for stamp, item in series}
-    series = sorted(by_timestamp.items())
-
-    rates = []
-    positive_intervals = 0
-
-    for i in range(1, len(series)):
-        t0, old = series[i - 1]
-        t1, new = series[i]
-        hours = (t1 - t0) / 3600
-
-        if hours < MIN_INTERVAL_HOURS:
-            continue
-
-        old_count = players(old)
-        new_count = players(new)
-
-        if old_count < MIN_BASE_PLAYERS:
-            continue
-
-        rates.append((new_count - old_count) / hours)
-
-        if new_count > old_count:
-            positive_intervals += 1
-
-    consistency = (
-        100 * positive_intervals / len(rates)
-        if rates else 0.0
+    # Générer une idée fondée sur les genres observés.
+    leading_genre = (
+        popular_categories[0]["genre"]
+        if popular_categories else "Simulation"
+    )
+    rising_genre = (
+        rising_games[0].get("genre")
+        if rising_games else leading_genre
     )
 
-    genre = (
-        game.get("genreL1")
-        or game.get("genre")
-        or game.get("genreL2")
-        or "Inconnu"
-    )
-
-    distinct_history = len({
-        stamp for stamp, _ in observations.get(key, [])
-    })
-
-    records.append({
-        **game,
-        "name": str(game.get("name", "Jeu inconnu")).strip(),
-        "game_id": key,
-        "playerCount": int(count),
-        "genre": genre,
-        "approval_rate": approval(game),
-        "player_growth": growth,
-        "player_growth_pct": (
-            round(growth_pct, 2) if growth_pct is not None else None
-        ),
-        "growth_per_hour": (
-            round(growth_hour, 2) if growth_hour is not None else None
-        ),
-        "comparison_hours": (
-            round(elapsed_hours, 2)
-            if elapsed_hours is not None else None
-        ),
-        "history_observations": distinct_history,
-        "valid_growth_intervals": len(rates),
-        "growth_consistency": round(consistency, 1),
-    })
-
-
-# ==================================================
-# SCORES
-# ==================================================
-
-pop_values = [math.log1p(g["playerCount"]) for g in records]
-
-growth_values = [
-    math.copysign(math.log1p(abs(g["growth_per_hour"])),
-                  g["growth_per_hour"])
-    for g in records
-    if g["growth_per_hour"] is not None
-    and g["comparison_hours"] is not None
-    and g["comparison_hours"] >= MIN_INTERVAL_HOURS
-]
-
-approval_values = [
-    g["approval_rate"]
-    for g in records
-    if g["approval_rate"] is not None
-]
-
-for game in records:
-    pop = rank_score(math.log1p(game["playerCount"]), pop_values)
-
-    rate = game["growth_per_hour"]
-    valid_interval = (
-        rate is not None
-        and game["comparison_hours"] is not None
-        and game["comparison_hours"] >= MIN_INTERVAL_HOURS
-    )
-
-    if valid_interval:
-        transformed_rate = math.copysign(
-            math.log1p(abs(rate)), rate
-        )
-        growth_score = rank_score(transformed_rate, growth_values)
-        if rate <= 0:
-            growth_score = 0.0
-    else:
-        growth_score = 0.0
-
-    approval_value = game["approval_rate"]
-    approval_score = (
-        rank_score(approval_value, approval_values)
-        if approval_value is not None else 50.0
-    )
-
-    # Aucun score de croissance n'est accordé sans intervalle valide.
-    potential = (
-        0.50 * growth_score
-        + 0.25 * pop
-        + 0.15 * approval_score
-        + 0.10 * game["growth_consistency"]
-    )
-
-    confirmed = (
-        valid_interval
-        and game["player_growth"] is not None
-        and game["player_growth"] > 0
-        and game["history_observations"] >= 1
-        and game["valid_growth_intervals"] >= 1
-        and game["growth_consistency"] >= 50
-    )
-
-    trend = (
-        0.45 * pop
-        + 0.35 * growth_score
-        + 0.10 * approval_score
-        + 0.10 * game["growth_consistency"]
-    )
-
-    if not confirmed:
-        trend *= 0.65
-
-    game.update({
-        "popularity_score": round(pop, 1),
-        "growth_score": round(growth_score, 1),
-        "potential_score": round(clamp(potential), 1),
-        "trend_score": round(clamp(trend), 1),
-        "trend_confirmed": bool(confirmed),
-    })
-
-
-# ==================================================
-# CLASSEMENTS
-# ==================================================
-
-top_games = sorted(
-    records,
-    key=lambda g: g["playerCount"],
-    reverse=True
-)[:20]
-
-fastest_growing = sorted(
-    [
-        g for g in records
-        if g["player_growth"] is not None
-        and g["player_growth"] > 0
-        and g["comparison_hours"] is not None
-        and g["comparison_hours"] >= MIN_INTERVAL_HOURS
-    ],
-    key=lambda g: g["growth_per_hour"],
-    reverse=True
-)[:20]
-
-high_potential = sorted(
-    records,
-    key=lambda g: g["potential_score"],
-    reverse=True
-)[:20]
-
-rising_games = sorted(
-    [g for g in records if g["trend_confirmed"]],
-    key=lambda g: (g["trend_score"], g["growth_consistency"]),
-    reverse=True
-)[:20]
-
-declining_games = sorted(
-    [
-        g for g in records
-        if g["player_growth"] is not None
-        and g["player_growth"] < 0
-        and g["comparison_hours"] is not None
-        and g["comparison_hours"] >= MIN_INTERVAL_HOURS
-    ],
-    key=lambda g: g["player_growth"]
-)[:20]
-
-category_counts = Counter(g["genre"] for g in records)
-
-popular_categories = [
-    {"genre": genre, "games": count}
-    for genre, count in category_counts.most_common()
-]
-
-
-# ==================================================
-# ENREGISTREMENT DE L'HISTORIQUE
-# ==================================================
-
-# Conserve le format déjà utilisé par ton fichier.
-snapshot = {
-    "timestamp": now_iso,
-    "games": [
-        {
-            "universeId": g.get("universeId"),
-            "rootPlaceId": g.get("rootPlaceId"),
-            "name": g.get("name"),
-            "playerCount": g["playerCount"],
-            "genreL1": g.get("genreL1", g.get("genre")),
-        }
-        for g in records
-    ],
-}
-
-# Évite les doublons d'horodatage, conserve les autres relevés.
-history = [
-    item for item in history
-    if not isinstance(item, dict)
-    or item.get("timestamp", item.get("analyzed_at")) != now_iso
-]
-
-history.append(snapshot)
-history.sort(
-    key=lambda item: parse_date(
-        item.get("timestamp", item.get("analyzed_at"))
-    ) or 0
-)
-history = history[-MAX_HISTORY:]
-write_json(HISTORY_FILE, history)
-
-
-# ==================================================
-# RAPPORT JSON
-# ==================================================
-
-analysis = {
-    "analyzed_at": now_iso,
-    "games_analyzed": len(records),
-    "games_comparable": sum(
-        1 for g in records if g["player_growth"] is not None
-    ),
-    "history_snapshots": len(history),
-    "comparison_hours": (
-        round(elapsed_hours, 2)
-        if elapsed_hours is not None else None
-    ),
-    "popular_categories": popular_categories,
-    "top_games": top_games,
-    "fastest_growing_games": fastest_growing,
-    "high_potential_games": high_potential,
-    "rising_games": rising_games,
-    "declining_games": declining_games,
-    "note": (
-        "Scores heuristiques, pas des prédictions. Les classements "
-        "de croissance utilisent uniquement les intervalles d'au moins "
-        "30 minutes. Les variations de joueurs dépendent aussi de "
-        "l'heure, des mises à jour et des événements. Plusieurs relevés "
-        "sur plusieurs heures ou jours sont nécessaires pour évaluer "
-        "une tendance durable."
-    ),
-}
-
-write_json(ANALYSIS_FILE, analysis)
-
-
-# ==================================================
-# IDÉE DE JEU
-# ==================================================
-
-best = next(
-    (
-        g for g in high_potential
-        if g["playerCount"] >= MIN_BASE_PLAYERS
-    ),
-    None
-)
-
-if best:
     idea = f"""# Idée de jeu Roblox
 
-## Jeu inspirant
-**{best['name']}**
+## Concept recommandé : {rising_genre} avec une mécanique de progression
 
-- Genre : {best['genre']}
-- Joueurs actuels : {best['playerCount']:,}
-- Votes positifs : {best['approval_rate'] if best['approval_rate'] is not None else 'Inconnu'} %
-- Score de potentiel : {best['potential_score']}/100
-- Tendance confirmée : {'Oui' if best['trend_confirmed'] else 'Pas encore'}
+### Pourquoi ce choix ?
+- Genre le plus représenté dans les données : **{leading_genre}**.
+- Genre en croissance : **{rising_genre if rising_games else "pas encore confirmé"}**.
+- Jeux analysés : **{len(enriched)}**.
+- Comparaison suffisamment longue : **{"oui" if enough_time else "non"}**.
 
-## Concept original à tester
+### Boucle de jeu
+1. Le joueur commence avec un équipement simple.
+2. Il réalise des défis courts pour gagner des récompenses.
+3. Il améliore son équipement et débloque de nouvelles zones.
+4. Il peut jouer avec ses amis et comparer ses résultats.
+5. Des événements temporaires apportent de nouveaux objectifs.
 
-Créer un jeu original du genre **{best['genre']}**, avec une boucle de jeu
-facile à comprendre, une progression visible et une première récompense
-rapide.
+### Pour se différencier
+- Une progression rapide au début.
+- Des objectifs quotidiens faciles à comprendre.
+- Des récompenses visuelles rares.
+- Des mises à jour régulières sans rendre le jeu pay-to-win.
 
-## Fonctionnalités proposées
-1. Un tutoriel court et adapté au mobile.
-2. Des objectifs simples et des récompenses régulières.
-3. Des objets à collectionner et des améliorations déblocables.
-4. Des défis renouvelés pour donner envie de revenir.
-5. Un prototype jouable à tester avec de vrais joueurs.
-
-## Validation
-Mesurer la rétention, la durée des sessions et les retours des joueurs
-avant d'investir dans du contenu supplémentaire.
-
-Le score est un indicateur heuristique, pas une garantie de succès.
+### Attention
+Cette idée est une piste à tester, pas une prédiction de succès.
+Les données actuelles mesurent les joueurs en ligne, pas les revenus,
+la rétention ni la difficulté de développement.
 """
-else:
-    idea = """# Idée de jeu Roblox
+    IDEA_FILE.write_text(idea, encoding="utf-8")
 
-Continue à collecter les données. Le bot a besoin de plusieurs relevés
-espacés pour identifier les tendances de croissance.
+    print(f"Jeux analysés : {len(enriched)}")
+    print(f"Jeux comparables : {comparable}")
+    print(f"Historique : {len(history)} relevés")
+    print(f"Intervalle (heures) : {analysis['comparison_hours']}")
+    print(f"Croissances détectées : {len(fastest_growing)}")
+    print(f"Tendances haussières : {len(rising_games)}")
+    print(f"Tendances baissières : {len(declining_games)}")
+    print(f"Rapport écrit : {ANALYSIS_FILE}")
+    print(f"Idée écrite : {IDEA_FILE}")
+    print(note)
 
-En attendant, crée un prototype original avec une boucle de jeu courte,
-une progression visible et des commandes adaptées au mobile.
-"""
 
-with open(IDEA_FILE, "w", encoding="utf-8") as file:
-    file.write(idea)
-
-print("===================================")
-print(" ROBLOX TREND BOT : ANALYSE TERMINEE")
-print("===================================")
-print(f"Jeux analysés : {len(records)}")
-print(f"Jeux comparables : {analysis['games_comparable']}")
-print(f"Snapshots conservés : {len(history)}")
-print(f"Tendances confirmées : {len(rising_games)}")
-print(f"Classement croissance : {len(fastest_growing)} jeux")
-print(f"Rapport : {ANALYSIS_FILE}")
-print(f"Idée : {IDEA_FILE}")
+if __name__ == "__main__":
+    main()
