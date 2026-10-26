@@ -35,7 +35,9 @@ def parse_datetime(value):
     if not value:
         return None
     try:
-        result = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        result = datetime.fromisoformat(
+            str(value).replace("Z", "+00:00")
+        )
         if result.tzinfo is None:
             result = result.replace(tzinfo=timezone.utc)
         return result.astimezone(timezone.utc)
@@ -46,7 +48,9 @@ def parse_datetime(value):
 def snapshot_time(snapshot):
     if not isinstance(snapshot, dict):
         return None
-    return parse_datetime(snapshot.get("timestamp") or snapshot.get("time"))
+    return parse_datetime(
+        snapshot.get("timestamp") or snapshot.get("time")
+    )
 
 
 def game_id_of(game):
@@ -62,13 +66,15 @@ def player_count(game):
 
     for key in ("playing", "playerCount", "players", "playingCount"):
         value = game.get(key)
+
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             return max(0, int(value))
+
         if isinstance(value, str):
             try:
                 return max(0, int(float(value)))
             except ValueError:
-                pass
+                continue
 
     return 0
 
@@ -115,14 +121,14 @@ def deduplicate_games(games):
                 if existing.get(key) in (None, "") and value not in (None, ""):
                     existing[key] = value
 
-            # Ne remplace les données que si la fiche est plus récente
-            # en nombre de joueurs; complète ensuite les champs manquants.
             if player_count(game) > player_count(existing):
                 old = existing
                 existing = dict(game)
+
                 for key, value in old.items():
                     if existing.get(key) in (None, "") and value not in (None, ""):
                         existing[key] = value
+
                 merged[game_id] = existing
 
         merged[game_id]["id"] = game_id
@@ -132,7 +138,7 @@ def deduplicate_games(games):
 
 
 def normalize_history(history, now):
-    """Valide, déduplique et trie les snapshots historiques."""
+    """Valide, déduplique et trie les relevés historiques."""
     by_timestamp = {}
 
     if not isinstance(history, list):
@@ -150,13 +156,15 @@ def normalize_history(history, now):
         if not isinstance(games, list):
             continue
 
-        key = timestamp.isoformat()
-        by_timestamp[key] = {
+        by_timestamp[timestamp.isoformat()] = {
             "timestamp": timestamp,
             "games": deduplicate_games(games),
         }
 
-    result = sorted(by_timestamp.values(), key=lambda item: item["timestamp"])
+    result = sorted(
+        by_timestamp.values(),
+        key=lambda item: item["timestamp"],
+    )
     return result[-MAX_HISTORY_SNAPSHOTS:]
 
 
@@ -170,12 +178,9 @@ def make_game_map(games):
 
 def calculate_game_trend(game_id, history, current_count, now):
     """
-    Compare chaque relevé avec le relevé historique le plus récent
-    datant d'au moins 30 minutes.
-
-    Les comparaisons peuvent se chevaucher : elles ne sont donc pas
-    considérées comme des preuves indépendantes. La confirmation exige
-    plusieurs observations successives cohérentes et suffisamment espacées.
+    Sélectionne des observations successives espacées d'au moins
+    30 minutes. Les variations calculées entre ces points ne se
+    chevauchent pas.
     """
     observations = []
 
@@ -190,45 +195,45 @@ def calculate_game_trend(game_id, history, current_count, now):
         if count >= MIN_PLAYERS_FOR_GROWTH and timestamp < now:
             observations.append((timestamp, count))
 
-    observations.append((now, current_count))
-    observations.sort(key=lambda item: item[0])
+    if current_count >= MIN_PLAYERS_FOR_GROWTH:
+        observations.append((now, current_count))
 
-    # Un seul relevé par instant.
+    # Dédupliquer les observations ayant exactement le même instant.
     unique = {}
     for timestamp, count in observations:
         unique[timestamp] = count
-    observations = sorted(unique.items())
 
-    # Construire des points de comparaison espacés d'au moins 30 minutes.
-    # Pour chaque observation, chercher la plus récente qui soit assez ancienne.
-    deltas = []
+    observations = sorted(unique.items(), key=lambda item: item[0])
+
+    if len(observations) < 2:
+        return empty_trend()
+
     min_seconds = MIN_COMPARISON_HOURS * 3600
 
-    for index, (end_time, end_count) in enumerate(observations):
-        if end_count < MIN_PLAYERS_FOR_GROWTH:
-            continue
+    # Partir du relevé le plus récent, puis remonter dans le temps.
+    # Chaque point sélectionné est au moins 30 minutes avant le précédent.
+    selected = [observations[-1]]
+    cursor_time = observations[-1][0]
 
-        start_index = None
+    for timestamp, count in reversed(observations[:-1]):
+        if (cursor_time - timestamp).total_seconds() >= min_seconds:
+            selected.append((timestamp, count))
+            cursor_time = timestamp
 
-        for previous_index in range(index - 1, -1, -1):
-            start_time, start_count = observations[previous_index]
-            elapsed = (end_time - start_time).total_seconds()
+    selected.reverse()
 
-            if elapsed >= min_seconds:
-                if start_count >= MIN_PLAYERS_FOR_GROWTH:
-                    start_index = previous_index
-                break
+    deltas = []
 
-        if start_index is None:
-            continue
+    for index in range(1, len(selected)):
+        start_time, start_count = selected[index - 1]
+        end_time, end_count = selected[index]
 
-        start_time, start_count = observations[start_index]
         growth = pct_change(start_count, end_count)
-
         if growth is None:
             continue
 
         deltas.append({
+            "start_time": start_time,
             "end_time": end_time,
             "hours": (end_time - start_time).total_seconds() / 3600,
             "previous": start_count,
@@ -238,22 +243,9 @@ def calculate_game_trend(game_id, history, current_count, now):
         })
 
     if not deltas:
-        return {
-            "growth_pct": None,
-            "player_change": None,
-            "comparison_hours": None,
-            "trend_confirmed": False,
-            "trend_intervals": 0,
-            "trend_direction": "insufficient_data",
-            "interval_growth_pct": [],
-            "last_comparison_at": None,
-            "data_fresh": False,
-        }
+        return empty_trend()
 
     latest = deltas[-1]
-
-    # N'utiliser que les comparaisons récentes qui terminent sur des
-    # observations distinctes espacées d'au moins 30 minutes.
     recent = deltas[-3:]
     changes = [item["growth_pct"] for item in recent]
 
@@ -282,9 +274,6 @@ def calculate_game_trend(game_id, history, current_count, now):
         direction = "uncertain"
         interval_count = len(recent)
 
-    # Une comparaison est fraîche seulement si elle se termine sur le
-    # relevé courant. Si le workflow tourne souvent, le dernier intervalle
-    # valide peut être plus ancien que l'observation actuelle.
     data_fresh = latest["end_time"] == now
 
     return {
@@ -300,8 +289,22 @@ def calculate_game_trend(game_id, history, current_count, now):
     }
 
 
+def empty_trend():
+    return {
+        "growth_pct": None,
+        "player_change": None,
+        "comparison_hours": None,
+        "trend_confirmed": False,
+        "trend_intervals": 0,
+        "trend_direction": "insufficient_data",
+        "interval_growth_pct": [],
+        "last_comparison_at": None,
+        "data_fresh": False,
+    }
+
+
 def choose_leading_genre(games, rising_games):
-    """Distingue le genre le plus populaire du genre en progression."""
+    """Détermine le genre en progression ou, à défaut, le plus populaire."""
     rising_scores = {}
 
     for game in rising_games:
@@ -315,6 +318,7 @@ def choose_leading_genre(games, rising_games):
         return genre, "genre ayant le plus de joueurs parmi les jeux en hausse confirmée"
 
     popularity_scores = {}
+
     for game in games:
         genre = game["genre"]
         if genre == "Inconnu":
@@ -355,8 +359,6 @@ def main():
     now = parse_datetime(source_timestamp) or datetime.now(timezone.utc)
 
     history = normalize_history(old_history, now)
-
-    # Évite les snapshots dupliqués à l'instant exact du relevé courant.
     history = [s for s in history if s["timestamp"] != now]
 
     analyzed_games = []
@@ -431,7 +433,23 @@ def main():
         and game["data_fresh"]
     ]
 
-    leading_genre, reason = choose_leading_genre(analyzed_games, rising_games)
+    # Comptage des quatre catégories pour vérifier le détecteur.
+    direction_counts = {
+        "up": 0,
+        "down": 0,
+        "uncertain": 0,
+        "insufficient_data": 0,
+    }
+
+    for game in analyzed_games:
+        direction = game.get("trend_direction", "insufficient_data")
+        if direction in direction_counts:
+            direction_counts[direction] += 1
+
+    leading_genre, reason = choose_leading_genre(
+        analyzed_games,
+        rising_games,
+    )
 
     history.append({
         "timestamp": now,
@@ -444,6 +462,9 @@ def main():
         "games_analyzed": len(analyzed_games),
         "rising_games_count": len(rising_games),
         "declining_games_count": len(declining_games),
+        "uncertain_games_count": direction_counts["uncertain"],
+        "insufficient_data_games_count": direction_counts["insufficient_data"],
+        "direction_counts": direction_counts,
         "history_snapshots": len(history),
         "leading_genre": leading_genre,
         "recommendation_reason": reason,
@@ -473,6 +494,12 @@ def main():
         f"**Jeux analysés :** {len(analyzed_games)}",
         f"**Snapshots conservés :** {len(history)}",
         "",
+        "## Bilan des catégories",
+        f"- En hausse : {direction_counts['up']}",
+        f"- En baisse : {direction_counts['down']}",
+        f"- Incertaines : {direction_counts['uncertain']}",
+        f"- Données insuffisantes : {direction_counts['insufficient_data']}",
+        "",
         "## Genre recommandé",
         leading_genre,
         "",
@@ -491,8 +518,7 @@ def main():
             )
     else:
         idea_lines.append(
-            "- Aucune hausse confirmée sur un relevé suffisamment récent. "
-            "Cela ne signifie pas qu'aucun jeu ne progresse."
+            "- Aucune hausse confirmée sur un relevé suffisamment récent."
         )
 
     idea_lines.extend(["", "## Jeux en baisse confirmée"])
@@ -510,23 +536,26 @@ def main():
     idea_lines.extend([
         "",
         "## Interprétation",
-        "La popularité mesure le nombre de joueurs observés. "
-        "Une tendance confirmée nécessite plusieurs comparaisons cohérentes. "
-        "Les résultats dépendent de la qualité et de la fréquence des relevés.",
+        "Une tendance confirmée exige au moins deux variations successives "
+        "cohérentes, calculées entre des observations espacées d'au moins "
+        "30 minutes. Les résultats dépendent de la fréquence et de la "
+        "qualité des relevés historiques.",
         "",
     ])
 
     with open(GAME_IDEA_FILE, "w", encoding="utf-8") as file:
         file.write("\n".join(idea_lines))
 
-    print("Analyse terminée.")
-    print(f"Jeux uniques analysés : {len(analyzed_games)}")
-    print(f"Tendances en hausse confirmées : {len(rising_games)}")
-    print(f"Tendances en baisse confirmées : {len(declining_games)}")
+    print("\n--- ANALYSE ROBLOX TERMINÉE ---")
+    print(f"Jeux analysés : {len(analyzed_games)}")
+    print(f"En hausse confirmée : {len(rising_games)}")
+    print(f"En baisse confirmée : {len(declining_games)}")
+    print(f"Incertaines : {direction_counts['uncertain']}")
+    print(f"Données insuffisantes : {direction_counts['insufficient_data']}")
     print(f"Snapshots historiques : {len(history)}")
     print(f"Genre recommandé : {leading_genre}")
-    print(f"Rapport : {ANALYSIS_FILE}")
-    print(f"Idée de jeu : {GAME_IDEA_FILE}")
+    print(f"Rapport enregistré : {ANALYSIS_FILE}")
+    print(f"Idée enregistrée : {GAME_IDEA_FILE}")
 
 
 if __name__ == "__main__":
