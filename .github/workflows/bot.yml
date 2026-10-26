@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   analyze:
@@ -22,11 +23,25 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Restaurer l'historique
+        uses: actions/cache/restore@v4
+        with:
+          path: data/history.json
+          key: roblox-history-${{ github.run_id }}
+          restore-keys: |
+            roblox-history-
+
       - name: Recuperer les jeux Roblox
         run: python main.py
 
       - name: Analyser les tendances
         run: python analyze.py
+
+      - name: Sauvegarder l'historique
+        uses: actions/cache/save@v4
+        with:
+          path: data/history.json
+          key: roblox-history-${{ github.run_id }}
 
       - name: Publier les rapports
         uses: actions/upload-artifact@v4
@@ -36,4 +51,6 @@ jobs:
             data/trends.json
             data/analysis.json
             data/game_idea.md
+            data/history.json
           if-no-files-found: error
+          retention-days: 30
