@@ -1,0 +1,14 @@
+{
+  "name": "CityLifeSimulator",
+  "tree": {
+    "$className": "DataModel",
+    "ServerScriptService": {
+      "$path": "roblox/ServerScriptService"
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "$path": "roblox/StarterPlayer/StarterPlayerScripts"
+      }
+    }
+  }
+}
