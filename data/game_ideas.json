@@ -1,0 +1,253 @@
+{
+  "generated_at": "2026-10-27T06:40:12.484459+00:00",
+  "ideas_generated": 12,
+  "trending_genres_found": [
+    "Simulation"
+  ],
+  "warning": "Les scores sont des heuristiques internes, pas des probabilités de succès. Les concepts ne sont pas encore des jeux Roblox fonctionnels. Les tendances et les droits sur les contenus doivent être vérifiés séparément.",
+  "ideas": [
+    {
+      "category": "Vie réelle",
+      "genre": "Simulation",
+      "title": "City Life Simulator",
+      "description": "Développe ta vie dans une ville, trouve un métier, gagne de l'argent virtuel et construis ta maison.",
+      "map": "Ville avec routes, maisons, commerces, parc et bâtiments publics.",
+      "mechanics": [
+        "Métiers",
+        "Maisons personnalisables",
+        "Économie virtuelle",
+        "Multijoueur"
+      ],
+      "difficulty": 2,
+      "score": 82,
+      "score_reasons": [
+        "Genre présent dans les données du bot.",
+        "La difficulté de développement est prise en compte."
+      ],
+      "trend_confirmed": true,
+      "generated_at": "2026-10-27T06:40:12.484389+00:00"
+    },
+    {
+      "category": "Multijoueur",
+      "genre": "Obby",
+      "title": "Impossible Tower",
+      "description": "Gravis une tour remplie d'obstacles, de pièges et de raccourcis.",
+      "map": "Tour verticale avec plateformes, obstacles et points de contrôle.",
+      "mechanics": [
+        "Parcours",
+        "Points de contrôle",
+        "Chronomètre",
+        "Classement"
+      ],
+      "difficulty": 1,
+      "score": 61,
+      "score_reasons": [
+        "La difficulté de développement est prise en compte."
+      ],
+      "trend_confirmed": false,
+      "generated_at": "2026-10-27T06:40:12.484448+00:00"
+    },
+    {
+      "category": "Vie réelle",
+      "genre": "Gestion",
+      "title": "Restaurant Empire",
+      "description": "Commence avec un petit restaurant et transforme-le en établissement réputé.",
+      "map": "Restaurant avec cuisine, salle, terrasse et quartier commerçant.",
+      "mechanics": [
+        "Préparation des commandes",
+        "Améliorations",
+        "Gestion du personnel fictif",
+        "Progression"
+      ],
+      "difficulty": 2,
+      "score": 57,
+      "score_reasons": [
+        "La difficulté de développement est prise en compte."
+      ],
+      "trend_confirmed": false,
+      "generated_at": "2026-10-27T06:40:12.484411+00:00"
+    },
+    {
+      "category": "Tendance potentielle",
+      "genre": "Simulator",
+      "title": "Power Evolution",
+      "description": "Entraîne ton personnage, améliore ses capacités et débloque des mondes différents.",
+      "map": "Zones d'entraînement, arènes et mondes progressifs.",
+      "mechanics": [
+        "Progression",
+        "Améliorations",
+        "Collection",
+        "Défis"
+      ],
+      "difficulty": 2,
+      "score": 57,
+      "score_reasons": [
+        "Concept proposé pour être testé, tendance non confirmée.",
+        "La difficulté de développement est prise en compte."
+      ],
+      "trend_confirmed": false,
+      "generated_at": "2026-10-27T06:40:12.484426+00:00"
+    },
+    {
+      "category": "Mystère",
+      "genre": "Enquête",
+      "title": "Secrets of Raven Manor",
+      "description": "Résous des mystères dans un manoir et découvre une histoire créée spécialement pour le jeu.",
+      "map": "Manoir, bibliothèque, jardin, cave et passages cachés.",
+      "mechanics": [
+        "Énigmes",
+        "Indices",
+        "Exploration",
+        "Progression narrative"
+      ],
+      "difficulty": 2,
+      "score": 57,
+      "score_reasons": [
+        "La difficulté de développement est prise en compte."
+      ],
+      "trend_confirmed": false,
+      "generated_at": "2026-10-27T06:40:12.484444+00:00"
+    },
+    {
+      "category": "Construction",
+      "genre": "Tycoon",
+      "title": "Dream Island Tycoon",
+      "description": "Construis une île touristique, développe tes installations et attire des visiteurs fictifs.",
+      "map": "Île avec plage, hôtel, commerces, port et attractions.",
+      "mechanics": [
+        "Construction",
+        "Améliorations",
+        "Gestion",
+        "Déblocage de zones"
+      ],
+      "difficulty": 2,
+      "score": 57,
+      "score_reasons": [
+        "La difficulté de développement est prise en compte."
+      ],
+      "trend_confirmed": false,
+      "generated_at": "2026-10-27T06:40:12.484451+00:00"
+    },
+    {
+      "category": "Vie réelle",
+      "genre": "Conduite",
+      "title": "Ultimate Driving City",
+      "description": "Explore une ville, conduis différents véhicules et participe à des défis routiers.",
+      "map": "Ville ouverte avec routes, circuit, garage et zones d'exploration.",
+      "mechanics": [
+        "Conduite",
+        "Courses",
+        "Véhicules à débloquer",
+        "Défis"
+      ],
+      "difficulty": 3,
+      "score": 53,
+      "score_reasons": [
+        "La difficulté de développement est prise en compte."
+      ],
+      "trend_confirmed": false,
+      "generated_at": "2026-10-27T06:40:12.484417+00:00"
+    },
+    {
+      "category": "Tendance potentielle",
+      "genre": "Survie",
+      "title": "Seven Nights Survival",
+      "description": "Survis à des nuits dangereuses, construis un abri et récupère des ressources avec tes amis.",
+      "map": "Forêt originale avec camp, grottes, lac et zones secrètes.",
+      "mechanics": [
+        "Collecte de ressources",
+        "Construction",
+        "Cycles jour-nuit",
+        "Coopération"
+      ],
+      "difficulty": 3,
+      "score": 53,
+      "score_reasons": [
+        "Concept proposé pour être testé, tendance non confirmée.",
+        "La difficulté de développement est prise en compte."
+      ],
+      "trend_confirmed": false,
+      "generated_at": "2026-10-27T06:40:12.484422+00:00"
+    },
+    {
+      "category": "Fantasy originale",
+      "genre": "Aventure",
+      "title": "Kingdoms of the Sky",
+      "description": "Explore des îles flottantes, découvre des trésors et développe tes pouvoirs.",
+      "map": "Îles flottantes, cascades, temples et ponts suspendus.",
+      "mechanics": [
+        "Exploration",
+        "Quêtes",
+        "Pouvoirs fictifs",
+        "Trésors"
+      ],
+      "difficulty": 3,
+      "score": 53,
+      "score_reasons": [
+        "La difficulté de développement est prise en compte."
+      ],
+      "trend_confirmed": false,
+      "generated_at": "2026-10-27T06:40:12.484429+00:00"
+    },
+    {
+      "category": "Science-fiction",
+      "genre": "Exploration",
+      "title": "Planet Frontier",
+      "description": "Explore une planète inconnue, collecte des matériaux et construis une colonie.",
+      "map": "Planète originale avec cratères, cristaux, grottes et base spatiale.",
+      "mechanics": [
+        "Exploration",
+        "Construction",
+        "Collecte",
+        "Amélioration de la base"
+      ],
+      "difficulty": 3,
+      "score": 53,
+      "score_reasons": [
+        "La difficulté de développement est prise en compte."
+      ],
+      "trend_confirmed": false,
+      "generated_at": "2026-10-27T06:40:12.484433+00:00"
+    },
+    {
+      "category": "Inspiré du cinéma",
+      "genre": "Horreur",
+      "title": "The Forgotten Hotel",
+      "description": "Explore un hôtel mystérieux, résous des énigmes et échappe à des dangers fictifs.",
+      "map": "Hôtel original avec chambres, couloirs, sous-sol et passages secrets.",
+      "mechanics": [
+        "Exploration",
+        "Énigmes",
+        "Objets cachés",
+        "Histoire originale"
+      ],
+      "difficulty": 3,
+      "score": 53,
+      "score_reasons": [
+        "La difficulté de développement est prise en compte."
+      ],
+      "trend_confirmed": false,
+      "generated_at": "2026-10-27T06:40:12.484436+00:00"
+    },
+    {
+      "category": "Inspiré du cinéma",
+      "genre": "Science-fiction",
+      "title": "Galactic Defenders",
+      "description": "Protège une colonie spatiale contre des menaces imaginaires et explore de nouveaux secteurs.",
+      "map": "Station spatiale, hangar, laboratoire et planète extraterrestre.",
+      "mechanics": [
+        "Missions",
+        "Équipement fictif",
+        "Exploration",
+        "Coopération"
+      ],
+      "difficulty": 3,
+      "score": 53,
+      "score_reasons": [
+        "La difficulté de développement est prise en compte."
+      ],
+      "trend_confirmed": false,
+      "generated_at": "2026-10-27T06:40:12.484441+00:00"
+    }
+  ]
+}
